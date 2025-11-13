@@ -29,13 +29,13 @@ Thumbs.db
 *.tmp
 temp/
 
-# Old forecast files (keep only data/ directory structure)
-forecast_*.csv
-forecast_*.json
-actual_*.csv
-actual_*.json
-weather_data_*.csv
-weather_data_*.json
+# Old forecast files in root directory only (keep data/ directory structure)
+/forecast_*.csv
+/forecast_*.json
+/actual_*.csv
+/actual_*.json
+/weather_data_*.csv
+/weather_data_*.json
 
 # Keep data directory but ignore large test files
 data/**/*.json
