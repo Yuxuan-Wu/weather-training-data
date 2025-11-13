@@ -1,0 +1,103 @@
+name: Weather Data Scraper
+
+on:
+  schedule:
+    # Scrape actual data every hour at minute 5
+    - cron: '5 * * * *'
+    # Scrape forecast at 11:59 PM London time (23:59 GMT, which is 23:59 UTC in winter, 22:59 UTC in summer)
+    # Using 22:59 UTC to be safe year-round
+    - cron: '59 22 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      scrape_type:
+        description: 'Type of scrape to run'
+        required: true
+        type: choice
+        options:
+          - hourly-actual
+          - daily-forecast
+          - both
+
+permissions:
+  contents: write
+
+jobs:
+  scrape-actual-hourly:
+    name: Scrape Actual Weather (Hourly)
+    runs-on: ubuntu-latest
+    # Run on hourly schedule or manual trigger
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '5 * * * *') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.scrape_type == 'hourly-actual' || github.event.inputs.scrape_type == 'both'))
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install Chrome and ChromeDriver
+        uses: browser-actions/setup-chrome@latest
+        with:
+          chrome-version: stable
+
+      - name: Scrape actual weather data
+        run: |
+          python scrape_actual_hourly.py
+
+      - name: Commit and push data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/actual/*.csv
+          git diff --staged --quiet || git commit -m "Add hourly actual weather data - $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
+
+  scrape-forecast-daily:
+    name: Scrape Daily Forecast
+    runs-on: ubuntu-latest
+    # Run on daily schedule (11:59 PM) or manual trigger
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '59 22 * * *') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.scrape_type == 'daily-forecast' || github.event.inputs.scrape_type == 'both'))
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install Chrome and ChromeDriver
+        uses: browser-actions/setup-chrome@latest
+        with:
+          chrome-version: stable
+
+      - name: Scrape forecast data
+        run: |
+          python scrape_forecast_daily.py
+
+      - name: Commit and push data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/forecast/*.csv
+          git diff --staged --quiet || git commit -m "Add daily forecast data - $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
