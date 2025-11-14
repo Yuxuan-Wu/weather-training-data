@@ -47,7 +47,7 @@ def fetch_thames_water_temp():
             print("Warning: No Thames water temperature data available")
             return None
 
-        latest = feeds[0]
+        latest = feeds[-1]  # Get the most recent entry (last in array)
 
         return {
             'water_temp_0_35m': latest.get('field1', ''),  # Surface temp at 0.35m
