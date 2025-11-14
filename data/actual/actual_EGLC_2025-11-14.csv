@@ -1,0 +1,2 @@
+scrape_timestamp,observation_time,temperature,dew_point,humidity,wind,pressure,precip_amount,condition,location,date,water_temp_0_35m,water_temp_2m,water_temp_7m,water_temp_entry_id
+2025-11-14T02:06:41.059333+00:00,1:20 AM,55 °F,55 °F,100 %,12 mph E,29.66 in,0.0 in,Light Rain,EGLC,2025-11-14,12.37500,12.43750,12.31250,563883
