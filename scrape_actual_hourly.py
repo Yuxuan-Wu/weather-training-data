@@ -171,12 +171,44 @@ def load_existing_observations(filename):
     return existing_times
 
 
-def find_closest_water_temp(observation_time, water_readings):
+def parse_observation_time_to_utc(obs_time_str, date_str):
+    """Parse observation time like '1:50 AM' and convert to UTC datetime
+
+    Args:
+        obs_time_str: String like "1:50 AM" or "12:20 PM"
+        date_str: Date string like "2025-11-15"
+
+    Returns:
+        datetime object in UTC, or None if parsing fails
+    """
+    try:
+        london_tz = pytz.timezone('Europe/London')
+
+        # Parse the time string
+        time_obj = datetime.strptime(obs_time_str, '%I:%M %p').time()
+
+        # Combine with date to get local datetime
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+        local_dt = datetime.combine(date_obj, time_obj)
+
+        # Localize to London timezone, then convert to UTC
+        local_dt = london_tz.localize(local_dt)
+        utc_dt = local_dt.astimezone(pytz.UTC)
+
+        return utc_dt
+
+    except Exception as e:
+        print(f"Warning: Could not parse observation time '{obs_time_str}': {e}")
+        return None
+
+
+def find_closest_water_temp(observation_time, date_str, water_readings):
     """Find the water temperature reading closest in time to the weather observation
 
     Args:
         observation_time: String like "1:50 AM" or "12:20 PM"
-        water_readings: List of water temp dicts with 'water_temp_timestamp'
+        date_str: Date string like "2025-11-15"
+        water_readings: List of water temp dicts with 'water_temp_timestamp' (ISO UTC)
 
     Returns:
         Water temp dict with the closest timestamp, or None if no readings available
@@ -184,9 +216,38 @@ def find_closest_water_temp(observation_time, water_readings):
     if not water_readings:
         return None
 
-    # For now, just return the most recent reading
-    # TODO: Could improve by parsing observation_time and matching timestamps
-    return water_readings[-1]
+    # Parse observation time to UTC
+    obs_utc = parse_observation_time_to_utc(observation_time, date_str)
+    if not obs_utc:
+        # Fallback to most recent if parsing fails
+        return water_readings[-1]
+
+    # Find the water temp reading with the closest timestamp
+    closest_reading = None
+    min_time_diff = None
+
+    for reading in water_readings:
+        water_timestamp_str = reading.get('water_temp_timestamp', '')
+        if not water_timestamp_str:
+            continue
+
+        try:
+            # Parse ISO timestamp from ThingSpeak (already in UTC)
+            water_dt = datetime.fromisoformat(water_timestamp_str.replace('Z', '+00:00'))
+
+            # Calculate time difference
+            time_diff = abs((water_dt - obs_utc).total_seconds())
+
+            if min_time_diff is None or time_diff < min_time_diff:
+                min_time_diff = time_diff
+                closest_reading = reading
+
+        except Exception as e:
+            print(f"Warning: Could not parse water timestamp '{water_timestamp_str}': {e}")
+            continue
+
+    # Return closest reading, or fallback to latest
+    return closest_reading if closest_reading else water_readings[-1]
 
 
 def save_observations_to_csv(observations, water_readings, data_dir='data/actual'):
@@ -240,8 +301,8 @@ def save_observations_to_csv(observations, water_readings, data_dir='data/actual
                 num_skipped += 1
                 continue
 
-            # Find matching water temperature reading
-            water_data = find_closest_water_temp(obs_time, water_readings)
+            # Find matching water temperature reading (closest in time)
+            water_data = find_closest_water_temp(obs_time, date_str, water_readings)
 
             if water_data:
                 obs.update({
@@ -250,6 +311,7 @@ def save_observations_to_csv(observations, water_readings, data_dir='data/actual
                     'water_temp_7m': water_data.get('water_temp_7m', ''),
                     'water_temp_entry_id': water_data.get('water_temp_entry_id', '')
                 })
+                print(f"  ✓ Added: {obs_time} (water temp: {water_data.get('water_temp_0_35m', 'N/A')}°C, entry {water_data.get('water_temp_entry_id', 'N/A')})")
             else:
                 obs.update({
                     'water_temp_0_35m': '',
@@ -257,11 +319,11 @@ def save_observations_to_csv(observations, water_readings, data_dir='data/actual
                     'water_temp_7m': '',
                     'water_temp_entry_id': ''
                 })
+                print(f"  ✓ Added: {obs_time} (no water temp data)")
 
             writer.writerow(obs)
             existing_times.add(obs_time)  # Track what we just added
             num_new += 1
-            print(f"  ✓ Added: {obs_time}")
 
     print(f"\n✓ Saved to {filename}")
     return filename, num_new, num_skipped
@@ -283,11 +345,14 @@ def main():
     print(f"Found {len(observations)} total observations on the page")
 
     # Fetch recent Thames water temperature readings (backfill mode)
+    # ThingSpeak logs every ~5 minutes: 12 readings/hour × 24 hours = 288 readings
+    # Fetch more to ensure full day coverage (ThingSpeak API limit is typically 8000)
     print("\nFetching recent Thames River water temperature readings...")
-    water_readings = fetch_thames_water_temp(num_results=20)
+    water_readings = fetch_thames_water_temp(num_results=300)
 
     if water_readings:
         print(f"✓ Fetched {len(water_readings)} water temperature readings")
+        print(f"  Time range: {water_readings[0].get('water_temp_timestamp', 'N/A')} to {water_readings[-1].get('water_temp_timestamp', 'N/A')}")
         print(f"  Latest: {water_readings[-1].get('water_temp_0_35m', 'N/A')}°C @ 0.35m")
     else:
         print("⚠ No water temperature data available")
